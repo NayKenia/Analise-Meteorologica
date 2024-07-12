@@ -1,0 +1,74 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import re
+
+def clean_string(s):
+    return re.sub(' +', ' ', s.strip()).encode('ascii', 'ignore').decode('ascii')
+
+def fetch_station_data(station_id):
+    url = f"http://sinda.crn.inpe.br/PCD/SITE/novo/site/tabela.php?id={station_id}"
+    response = requests.get(url)
+    response.encoding = 'utf-8'
+    if response.status_code != 200:
+        print(f"Erro ao acessar a estação {station_id}")
+        return None
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    cadastral_data = {}
+    table = soup.find('table', {"width": "90%"})
+    if table:
+        rows = table.find_all('tr')[1]
+        values = [clean_string(value.get_text()) for value in rows.find_all('td')]
+        cadastral_data = {
+            "Proprietario": values[0],
+            "Estacao": values[1],
+            "Municipio": values[2],
+            "UF": values[3],
+            "Latitude": values[4],
+            "Longitude": values[5],
+            "Altitude": values[6],
+        }
+        print(f"Dados Cadastrais para estação {station_id}: {cadastral_data}")
+
+    historical_data = []
+    historical_table = soup.find_all('table', {"border": "1"})
+    if len(historical_table) > 1:
+        historical_table = historical_table[1]
+        headers = [clean_string(header.get_text()) for header in historical_table.find_all('tr')[0].find_all('td')]
+        print(f"Cabeçalhos da Tabela Histórica para estação {station_id}: {headers}")
+        for row in historical_table.find_all('tr')[1:]:
+            values = [clean_string(value.get_text()) for value in row.find_all('td')]
+            historical_entry = dict(zip(headers, values))
+            historical_data.append(historical_entry)
+        print(f"Dados Históricos para estação {station_id}: {historical_data}")
+    else:
+        print(f"Não foi possível encontrar a tabela histórica para a estação {station_id}.")
+
+    return cadastral_data, historical_data
+
+def save_to_excel(station_data, filename='estacoes_meteorologicas.xlsx'):
+    all_data = []
+    for cadastral_data, historical_data in station_data:
+        for historical_entry in historical_data:
+            row = {**cadastral_data, **historical_entry}
+            all_data.append(row)
+
+    df = pd.DataFrame(all_data)
+    df.to_excel(filename, index=False, encoding='utf-8')
+    print(f"Dados salvos em {filename}")
+
+def main():
+    station_ids = [31074, 31102, 70120, 31770, 31877, 70105, 70103, 31082, 31071, 32571, 70114, 31075, 31087, 31089, 31078, 32570, 32632, 31072, 31942, 31095, 31090, 31879, 70113, 31100, 70116, 31127, 31128, 31046, 32572, 31124, 30979, 31125, 31044, 70101, 70112, 70102, 70115, 31126, 31085, 31079, 31084, 31081, 31099, 31880, 31073, 31086, 31096, 70121, 32569, 70106, 31092, 31076, 31094, 31093, 70104, 70100, 31101, 70107, 31088, 31077, 70117, 31083, 31091, 31080, 31097, 31098]  # Adicione aqui todos os IDs das estações que você deseja acessar
+    all_station_data = []
+    for station_id in station_ids:
+        data = fetch_station_data(station_id)
+        if data:
+            cadastral_data, historical_data = data
+            all_station_data.append((cadastral_data, historical_data))
+
+    save_to_excel(all_station_data)
+
+if __name__ == "__main__":
+    main()
